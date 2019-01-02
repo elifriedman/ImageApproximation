@@ -11,30 +11,49 @@ class Shape(object):
     """A shape object
     """
 
-    def __init__(self, x, y, color, alpha):
-        self.x = x
-        self.y = y
+    def __init__(self, pos, color, alpha):
+        self.x = pos[0]
+        self.y = pos[1]
         self.color = np.asarray(color)
         self.alpha = alpha
-        self._params = [self.x, self.y, self.color, alpha]
+        self._params = [*pos, *color, alpha]
 
 
     @classmethod
     def init_from_params(cls, params):
-        return cls(*params)
+        pos = params[:2]
+        color = params[2:5]
+        params = params[5:]
+        return cls(pos, color, *params)
 
     @property
     def params(self):
-        return np.asarray(self._params)
+        return self._params
+
+    @classmethod
+    def random_params(cls, shape):
+        x = np.random.randint(0, shape[0])
+        y = np.random.randint(0, shape[1])
+        pos = (x, y)
+        color = np.random.rand(3)
+        alpha = np.random.rand()
+        return [x, y, *color, alpha]
 
     def draw(self, image):
         pass
 
 class Circle(Shape):
-    def __init__(self, x, y, color, alpha, radius):
-        super().__init__(x, y, color, alpha)
+    def __init__(self, pos, color, alpha, radius):
+        super().__init__(pos, color, alpha)
         self.radius = radius
         self._params.append(self.radius)
+
+    @classmethod
+    def random_params(cls, shape):
+        params = super().random_params(shape)
+        radius = np.random.randint(max(shape))
+        params.append(radius)
+        return params
 
     def draw(self, image):
         rx = self.radius
@@ -51,9 +70,12 @@ class Circle(Shape):
             rx2 = rx2 - 2*i - 1
             rx = int(sqrt(rx2 if rx2 >= 0 else 0))
 
+
+
 def drawcircs(image, N):
     h = 400
     w = 600
+    circles = []
     for i in range(N):
         x = np.random.randint(0, h)
         y = np.random.randint(0, w)
@@ -62,6 +84,6 @@ def drawcircs(image, N):
         radius = np.random.randint(0, max(h, w)//2)
         param = [x, y, color, alpha, radius]
         c = Circle.init_from_params(param)
+        circles.append(c)
         c.draw(image)
-    return image
-    
+    return image, circles
