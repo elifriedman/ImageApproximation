@@ -1,18 +1,24 @@
 import numpy as np
 import time
 
+from collections import namedtuple
+
+Param = namedtuple('Param', ['value', 'vector',])
+
 class Optimizer(object):
     def __init__(self, evaluate, initial_param_gen):
         self.evaluate = evaluate
         self.param_gen = initial_param_gen
-        self.initial_param = initial_param_gen()
-        self.D = len(self.initial_param)
+        initial_param = initial_param_gen()
+        self.initial_param = Param(self.evaluate(initial_param), initial_param)
+        self.D = len(self.initial_param.vector)
 
     def init(self):
         pass
 
     def iterate(self):
         pass
+
 
 class SimulatedAnnealing(Optimizer):
     def __init__(self, evaluate, initial_param_gen):
@@ -26,15 +32,15 @@ class SimulatedAnnealing(Optimizer):
 
     def init(self):
         self.t = 0
-        self.current = (self.evaluate(self.initial_param), self.initial_param)
+        self.current = self.initial_param
         self.best = self.current
         self.best_time = 0
 
     def iterate(self):
         self.op = ""
         idxs = np.random.choice(range(self.D), size=1, replace=False)
-        candidate = self.current[1].copy()
-        candidate[idxs] = self.current[1][idxs] + np.random.rand(len(idxs))
+        candidate = self.current.vector.copy()
+        candidate[idxs] = self.current.vector[idxs] + np.random.rand(len(idxs))
 
 #        candidate = np.minimum(1, np.maximum(0, candidate))
         while np.any(candidate < 0):
@@ -45,27 +51,23 @@ class SimulatedAnnealing(Optimizer):
             candidate[outofrange] -= 1.
 
         cand_eval = self.evaluate(candidate)
-        prob = self.prob(self.t, self.current[0], cand_eval)
-        self.op += "%.3f %.3f %.3f %.3f " % (cand_eval, self.current[0], self.temp(self.t), prob)
+        prob = self.prob(self.t, self.current.value, cand_eval)
+        self.op += "%.3f %.3f %.3f %.3f " % (cand_eval, self.current.value, self.temp(self.t), prob)
 
-        if cand_eval < self.best[0]:
-            a = np.linalg.norm(candidate - self.best[1])
-            b = np.linalg.norm(candidate - self.current[1])
+        if cand_eval < self.best.value:
+            a = np.linalg.norm(candidate - self.best.vector)
+            b = np.linalg.norm(candidate - self.current.vector)
             self.op += ":-) (%.3f, %.3f) " % (a, b)
-            self.best = (cand_eval, candidate)
+            self.best = Param(cand_eval, candidate)
 
         if np.random.rand() < prob:
-            a = np.linalg.norm(candidate - self.best[1])
-            b = np.linalg.norm(candidate - self.current[1])
+            a = np.linalg.norm(candidate - self.best.vector)
+            b = np.linalg.norm(candidate - self.current.vector)
             self.op += "new (%.3f, %.3f) " % (a, b)
-            self.current = (cand_eval, candidate)
+            self.current = Param(cand_eval, candidate)
         
         self.t += 1
         return self.best
-
-        
-        
-        
 
 class SimplexOptimizer(Optimizer):
     def __init__(self, evaluate, initial_param_gen):
@@ -77,26 +79,26 @@ class SimplexOptimizer(Optimizer):
         idxs = [i for i in range(self.D)]
         np.random.shuffle(idxs)
         idxs = idxs
-        simplex = [self.param_gen()]
+        simplex = [self.initial_param.vector]
         simplex.extend([np.roll(vec, i) + simplex[0] for i in idxs])
-        self.simplex = [(self.evaluate(param), param) for param in simplex]
+        self.simplex = [Param(self.evaluate(param), param) for param in simplex]
 
 
     def iterate(self):
-        self.simplex.sort(key=lambda x: x[0])
+        self.simplex.sort(key=lambda x: x.value)
         largest  = self.simplex[-1]  # worst performer
         secondlargest = self.simplex[-2]  # second worst performer
-        smallest = self.simplex[0]
-        centroid = np.mean([elem[1] for elem in self.simplex[:-1]], axis=0)
+        smallest = self.simplex.value
+        centroid = np.mean([elem.vector for elem in self.simplex[:-1]], axis=0)
 
-        candidate = centroid + 1*(centroid[1] - largest[1])  # expand in the direction opposite the worst performer
+        candidate = centroid + 1*(centroid.vector - largest.vector)  # expand in the direction opposite the worst performer
         candidate = (self.evaluate(candidate), candidate)
 
-        if candidate[0] < smallest[0]:
+        if candidate.value < smallest.value:
             # that direction was a success, let's try to improve further
-            newcandidate = centroid + 2*(candidate[1] - centroid[1])
+            newcandidate = centroid + 2*(candidate.vector - centroid.vector)
             newcandidate = (self.evaluate(newcandidate), newcandidate)
-            if newcandidate[0] < candidate[0]:
+            if newcandidate.value < candidate.value:
                 self.op = "double extend"
                 self.simplex[-1] = newcandidate
                 return newcandidate
@@ -105,29 +107,29 @@ class SimplexOptimizer(Optimizer):
                 self.simplex[-1] = candidate
                 return candidate
 
-        if smallest[0] <= candidate[0] < secondlargest[0]:
+        if smallest.value <= candidate.value < secondlargest.value:
             self.op = "extend (2)"
             self.simplex[-1] = candidate 
             return smallest
 
-        if secondlargest[0] <= candidate[0] < largest[0]:
+        if secondlargest.value <= candidate.value < largest.value:
             # that direction wasn't a complete failure, let's try something more conservative
             self.op = "outer contract"
-            newcandidate = centroid + 0.5*(candidate[1] - centroid[1])
+            newcandidate = centroid + 0.5*(candidate.vector - centroid.vector)
             newcandidate = (self.evaluate(newcandidate), newcandidate)
         
-        if largest[0] <= candidate[0]:
+        if largest.value <= candidate.value:
             self.op = "inner contract"
-            newcandidate = centroid + 0.5*(largest[1] - centroid[1])
+            newcandidate = centroid + 0.5*(largest.vector - centroid.vector)
             newcandidate = (self.evaluate(newcandidate), newcandidate)
 
-        if newcandidate[0] < largest[0]:
+        if newcandidate.value < largest.value:
             self.simplex[-1] = newcandidate
             return newcandidate
 
         # form a new simplex closer to the best performer
         self.op = "all contract"
-        newsimplex = [smallest[1] + 0.5*(param[1] - smallest[1]) for param in self.simplex]
+        newsimplex = [smallest.vector + 0.5*(param.vector - smallest.vector) for param in self.simplex]
         self.simplex = [(self.evaluate(param), param) for param in newsimplex]
-        self.simplex.sort(key=lambda x: x[0])
-        return self.simplex[0]
+        self.simplex.sort(key=lambda x: x.value)
+        return self.simplex.value
