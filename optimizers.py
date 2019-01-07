@@ -205,12 +205,12 @@ class SimplexOptimizer(Optimizer):
 
     def init(self):
         vec = np.zeros(self.D)
-        vec[0] = 1.
+        vec[0] = .5
         simplex = [self.initial_param.vector]
         if not self.random_init:
-            simplex.extend([np.roll(vec, i) + simplex[0] for i in range(self.D)])  # create simplex
+            simplex.extend([normalize(np.roll(vec, i) + simplex[0]) for i in range(self.D)])  # create simplex
         else:
-            simplex.extend([np.random.uniform(size=self.D) + simplex[0] for i in range(self.D)])  # create simplex
+            simplex.extend([normalize(np.random.uniform(size=self.D) + simplex[0]) for i in range(self.D)])  # create simplex
         self.simplex = [Param(self.evaluate(param), param) for param in simplex]
         self.simplex.sort(key=lambda x: x.value)
 
@@ -264,6 +264,10 @@ class SimplexOptimizer(Optimizer):
 
         # form a new simplex closer to the best performer
         logger.debug("operation: shrink all")
+#        idxs = np.random.choice(np.arange(self.D), 40, replace=False)
+#        for idx in idxs:
+#            newval = normalize(smallest.vector + self.w_shrink*(self.simplex[idx].vector - smallest.vector))
+#            self.simplex[idx] = Param(self.evaluate(newval), newval)
         newsimplex = [normalize(smallest.vector + self.w_shrink*(param.vector - smallest.vector)) for param in self.simplex]
         self.simplex = [Param(self.evaluate(param), param) for param in newsimplex]
         self.simplex.sort(key=lambda x: x.value)
