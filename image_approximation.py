@@ -87,11 +87,11 @@ class ImageApproximator(object):
                 img.save(output_file)
             if i % log_interval == 0:
                 now = time.time() - start
-                self.logger.info("%d: time=%.3f, score=%.3f, best=%.3f", i, now, value, best)
+                self.logger.info("%d: time=%.3f, score=%.3f", i, now, value)
 
         return self.evaluate(paramvec, return_img=True)
 
-            
+
 def get_optimizer(args):
     if args.optimizer == "simplex":
         opt = SimplexOptimizer
