@@ -8,8 +8,8 @@ logger = logging.getLogger("optimizer")
 Param = namedtuple('Param', ['value', 'vector',])
 
 def normalize(param):
-    return param % 1.
-#    return np.maximum(0., np.minimum(1., param))
+#    return param % 1.
+    return np.maximum(0., np.minimum(1., param))
 
 
 class Optimizer(object):
@@ -179,7 +179,7 @@ class SimplexOptimizer(Optimizer):
     def __init__(self, evaluate, initial_param_gen,
                  w_reflect=1., w_expand=2.,
                  w_contract=.5, w_shrink=.5,
-                 random_init=False):
+                 random_init=False, **kwargs):
         """Nelder Mead Simplex Optimizer Algorithm
 
         Parameters
@@ -243,25 +243,28 @@ class SimplexOptimizer(Optimizer):
             self.simplex.sort(key=lambda x: x.value)
             return self.simplex[0]
 
+        op = None
         if secondlargest.value <= candidate.value < largest.value:
             # that direction wasn't a complete failure, let's try something more conservative
-            logger.debug("operation: outer contract %.3f" % candidate.value)
+            op = "operation: outer contract %.3f" % candidate.value
             newcandidate = normalize(centroid + self.w_contract*(candidate.vector - centroid))
             newcandidate = Param(self.evaluate(newcandidate), newcandidate)
         
         if largest.value <= candidate.value:
-            logger.debug("operation: inner contract %.3f" % candidate.value)
+            op = "operation: inner contract %.3f" % candidate.value
             newcandidate = normalize(centroid + self.w_contract*(largest.vector - centroid))
             newcandidate = Param(self.evaluate(newcandidate), newcandidate)
 
         if newcandidate.value < largest.value:
+            if op:
+                logger.debug(op)
             self.simplex[-1] = newcandidate
             self.simplex.sort(key=lambda x: x.value)
             return self.simplex[0]
 
         # form a new simplex closer to the best performer
         logger.debug("operation: shrink all")
-        newsimplex = [normalize(smallest.vector + self.w_shrink*(param - smallest.vector)) for param in self.simplex]
+        newsimplex = [normalize(smallest.vector + self.w_shrink*(param.vector - smallest.vector)) for param in self.simplex]
         self.simplex = [Param(self.evaluate(param), param) for param in newsimplex]
         self.simplex.sort(key=lambda x: x.value)
         return self.simplex[0]
