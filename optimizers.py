@@ -5,6 +5,16 @@ from collections import namedtuple
 
 Param = namedtuple('Param', ['value', 'vector',])
 
+def normalize(param):
+    while np.any(param < 0):
+        outofrange = param < 0
+        param[outofrange] += 1.
+    while np.any(param > 1):
+        outofrange = param > 1
+        param[outofrange] -= 1.
+    return param
+
+
 class Optimizer(object):
     def __init__(self, evaluate, initial_param_gen):
         self.evaluate = evaluate
@@ -18,6 +28,67 @@ class Optimizer(object):
 
     def iterate(self):
         pass
+
+
+class ParticleSwarm(Optimizer):
+    def __init__(self, evaluate, initial_param_gen, number_particles=10):
+        super().__init__(evaluate, initial_param_gen)
+        self.number_particles = number_particles
+    
+    def init(self):
+        self.op = ""
+        self.particles = []
+
+        param = self.param_gen()
+        self.best = Param(self.evaluate(param), param)
+        for i in range(self.number_particles):
+            pos = self.param_gen()
+            particle = Particle(pos, self.evaluate)
+            self.particles.append(particle)
+            if particle.best.value < self.best.value:
+                self.best = particle.best
+        self.idxs = np.arange(self.number_particles)
+        np.random.shuffle(self.idxs)  # update particles in random order
+        self.ct = 0
+
+
+    def iterate(self):
+        idx = self.idxs[self.ct % self.number_particles]
+        self.op = ""
+        best = self.particles[idx].update(self.best)
+        if best.value < self.best.value:
+            self.best = best
+
+        self.ct += 1
+        if self.ct % self.number_particles == 0:
+            np.random.shuffle(self.idxs)
+        return self.best
+
+class Particle(object):
+    def __init__(self, initial_pos, eval_fn):
+        self.pos = initial_pos
+        self.vel = np.random.uniform(-1., 1, len(initial_pos))
+        self.eval_fn = eval_fn
+        self.best = Param(self.eval_fn(initial_pos), initial_pos.copy())
+
+    def update(self, global_best):
+        pbest_weight = np.random.uniform(0, 1, len(self.pos))
+        gbest_weight = np.random.uniform(0, 1, len(self.pos))
+        bp = self.best.vector - self.pos
+        gp = global_best.vector - self.pos
+
+        omega = 0.5 / np.log(2.)
+        c1 = 0.5 + np.log(2.)
+        c2 = 0.5 + np.log(2.)
+
+        self.vel = omega*self.vel + c1*pbest_weight*bp + c2*gbest_weight*gp
+        self.pos += self.vel
+        self.pos = np.maximum(0., np.minimum(1., self.pos))
+
+        value = self.eval_fn(self.pos)
+        if value < self.best.value:
+            self.best = Param(value, self.pos.copy())
+        return self.best
 
 
 class SimulatedAnnealing(Optimizer):
@@ -43,12 +114,7 @@ class SimulatedAnnealing(Optimizer):
         candidate[idxs] = self.current.vector[idxs] + np.random.rand(len(idxs))
 
 #        candidate = np.minimum(1, np.maximum(0, candidate))
-        while np.any(candidate < 0):
-            outofrange = candidate < 0
-            candidate[outofrange] += 1.
-        while np.any(candidate > 1):
-            outofrange = candidate > 1
-            candidate[outofrange] -= 1.
+        candidate = normalize(candidate)
 
         cand_eval = self.evaluate(candidate)
         prob = self.prob(self.t, self.current.value, cand_eval)
