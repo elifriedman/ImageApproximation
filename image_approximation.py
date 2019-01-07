@@ -87,7 +87,7 @@ class ImageApproximator(object):
                 img.save(output_file)
             if i % log_interval == 0:
                 now = time.time() - start
-                self.logger.info("%d: time=%.3f, score=%.3f", i, now, value)
+                self.logger.info("%d: time=%.3f, score=%.3f, best=%.3f", i, now, value, best)
 
         return self.evaluate(paramvec, return_img=True)
 
@@ -126,9 +126,9 @@ def parse_args():
     group.add_argument("--random_init", action="store_true", default=False,
                        help="initialize in random directions as opposed to along axes")
     group.add_argument("--w_reflect", type=float, default=1., help="weight for reflecting")
-    group.add_argument("--w_expand", type=float, default=1., help="weight for expanding")
-    group.add_argument("--w_contract", type=float, default=1., help="weight for contracting")
-    group.add_argument("--w_shrink", type=float, default=1., help="weight for shrinking")
+    group.add_argument("--w_expand", type=float, default=2., help="weight for expanding")
+    group.add_argument("--w_contract", type=float, default=.5, help="weight for contracting")
+    group.add_argument("--w_shrink", type=float, default=.5, help="weight for shrinking")
 
     group = parser.add_argument_group("annealing", "Simulated Annealing")
     group.add_argument("--w_gamma", type=float, default=.1, help="initial multiplier for temperature")
