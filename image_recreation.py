@@ -1,83 +1,156 @@
 import time
+import signal
+import logging
 import numpy as np
+import argparse
 from PIL import Image
 
-from shapes import Circle, Rectangle
-from optimizers import SimplexOptimizer, SimulatedAnnealing
+from shapes import Circle, Rectangle, Triangle
+from optimizers import SimplexOptimizer, SimulatedAnnealing, ParticleSwarm
 
-def vec2params(N, param_vec):
-    return np.reshape(param_vec, (N, -1))
 
-def params2vec(params):
-    return np.concatenate(params)
 
-class IMG(object):
-    def __init__(self, shape):
-        self.shape = shape
-        self.image = np.zeros(shape)
-    
-    def get(self):
-        self.image.fill(0)
-        return self.image
+def get_shape(shape_name):    
+    shape_name = shape_name.lower()
+    if shape_name == "circle":
+        return Circle
+    if shape_name == "rectangle":
+        return Rectangle
+    if shape_name == "triangle":
+        return Triangle
+    raise AttributeError("No shape found '{}'".format(shape_name))
 
-def main():
-    N = 100
-    target = np.asarray(Image.open('image.jpg'))
-    shape_type = Circle
 
-    def genvec():
+class ImageApproximator(object):
+    def __init__(self, image_name, shape, num_shapes, optimizer_type, loglevel=logging.INFO):
+        self.target = np.asarray(Image.open(image_name))
+        self.num_shapes = num_shapes
+        self.shape_type = shape
+        self.optimizer = optimizer_type(self.evaluate, self.gen_random_vec)
+        self.config_logging(loglevel)
+
+    def config_logging(self, loglevel):
+        self.logger = logging.getLogger("ImageApprixmator")
+        handler = logging.StreamHandler()
+        self.logger.addHandler(handler)
+        self.logger.setLevel(loglevel)
+        handler.setLevel(loglevel)
+        logging.getLogger("optimizer").setLevel(loglevel)
+        logging.getLogger("optimizer").addHandler(handler)
+
+    def gen_random_vec(self):
         params = []
-        for i in range(N):
-            params.append(shape_type.random_params())
-        param_vec = params2vec(params)
+        for i in range(self.num_shapes):
+            params.append(self.shape_type.random_params())
+        param_vec = self.params2vec(params)
         return param_vec
 
-    param_vec = genvec()
-    img_gen = IMG(target.shape)
-    def evaluate(param_vec):
-        params = vec2params(N, param_vec)
-        img = Image.new('RGB', (target.shape[1], target.shape[0]))
+    def vec2params(self, param_vec):
+        return np.reshape(param_vec, (self.num_shapes, -1))
+
+    def params2vec(self, params):
+        return np.concatenate(params)
+
+    def evaluate(self, param_vec, return_img=False):
+        params = self.vec2params(param_vec)
+        img = Image.new('RGB', (self.target.shape[1], self.target.shape[0]))
         for param in params:
-            shape = shape_type.init_from_params(param)
+            shape = self.shape_type.init_from_params(param)
             shape.draw(img)
-        return np.mean(np.abs(np.asarray(img) - target))
-    
-    def draw(param_vec):
-        params = vec2params(N, param_vec)
-        params = np.minimum(1.0, np.maximum(0, params))
-        img = Image.new('RGB', (target.shape[1], target.shape[0]))
-        for param in params:
-            shape = shape_type.init_from_params(param)
-            shape.draw(img)
-        return img
+        value = np.mean(np.abs(np.asarray(img) - self.target))
+        if return_img:
+            return value, img
+        return value
 
-#    optimizer = SimplexOptimizer
-    optimizer = SimulatedAnnealing
-    optim = optimizer(evaluate, genvec)
-    optim.init()
+    def run(self, num_steps=None, time_limit=None, output_file="output.png", log_interval=1000):
+        num_steps = 1000000000 if num_steps is None else num_steps 
+        time_limit = 3600*24 if time_limit is None else time_limit
 
-    start = time.time()
-    best_score = 1E9
-    for i in range(100000):
-        score, param_vec = optim.iterate()
-        if score < best_score:
-            img = draw(param_vec)
-            img.save('best_{}.png'.format(i))
-            best_score = score
-        if i % 1000 == 0:
-            try:
-                param_vec = optim.current[1]
-            except AttributeError:
-                pass
-            img = draw(param_vec)
-            img.save('img_{}.png'.format(i))
-        curtime = time.time() - start
-        print("{}: took %.3fs. score=%.3f, op={}".format(i, optim.op) % (curtime, score))
-    end = time.time() - start
-    print("Total time: {}".format(end))
+        self.stop = False
+        def sig_handler(sig, frame):
+            self.stop = True
+        signal.signal(signal.SIGINT, sig_handler)
+
+        best = np.inf
+        start = time.time()
+        for i in range(num_steps):
+            now = time.time() - start
+            if now >= time_limit:
+                break
+            if self.stop:
+                break
+
+            value, paramvec = self.optimizer.iterate()
+            if value < best:
+                best = value
+                value, img = self.evaluate(paramvec, return_img=True)
+                img.save(output_file)
+            if i % log_interval == 0:
+                now = time.time() - start
+                self.logger.info("%d: time=%.3f, score=%.3f, best=%.3f", i, now, value, best)
+
+        return self.evaluate(paramvec, return_img=True)
+
+            
+def get_optimizer(args):
+    if args.optimizer == "simplex":
+        opt = SimplexOptimizer
+    if args.optimizer == "annealing":
+        opt = SimulatedAnnealing
+    if args.optimizer == "pso":
+        opt = ParticleSwarm
+    return lambda evl, gen: opt(evl, gen, **args.__dict__)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
 
+    parser.add_argument("image_name", type=str)
+    parser.add_argument("--output", type=str, default="output.png", help="output file name")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--log_interval", type=int, default=1000, help="how often to log")
+    parser.add_argument("--num_steps", type=int, help="how many steps to run for")
+    parser.add_argument("--time_limit", type=int, help="how long to run for (seconds)")
+    parser.add_argument("--shape", type=str, help="shape to use for image approximation",
+                                    default="circle",
+                                    choices=["circle", "rectangle", "triangle"])
+    parser.add_argument("--num_shapes", type=int, default=100, help="number of shapes to use")
+    parser.add_argument("--optimizer", type=str,
+                                     help="Choose which optimizer to use.",
+                                     default="annealing",
+                                     choices=["simplex",
+                                              "annealing",
+                                              "pso"])
+
+    group = parser.add_argument_group("simplex", "Nelson-Mead Simplex Algorithm")
+    group.add_argument("--random_init", action="store_true", default=False,
+                       help="initialize in random directions as opposed to along axes")
+    group.add_argument("--w_reflect", type=float, default=1., help="weight for reflecting")
+    group.add_argument("--w_expand", type=float, default=1., help="weight for expanding")
+    group.add_argument("--w_contract", type=float, default=1., help="weight for contracting")
+    group.add_argument("--w_shrink", type=float, default=1., help="weight for shrinking")
+
+    group = parser.add_argument_group("annealing", "Simulated Annealing")
+    group.add_argument("--w_gamma", type=float, default=.1, help="initial multiplier for temperature")
+    group.add_argument("--num_axes", type=int, default=1, help="The number of axes of the current point that should be updated per iteration")
+
+    group = parser.add_argument_group("pso", "Particle Swarm Optimization")
+    group.add_argument("--number_particles", type=int, default=40, help="Number of particles")
+    group.add_argument("--w_omega", type=float, default=0.5 / np.log(2), help="Weight to multipliy the current velociy")
+    group.add_argument("--w_pb", type=float, default=0.5 + np.log(2), help="Weight to move in the direction of the personal best")
+    group.add_argument("--w_gb", type=float, default=0.5 + np.log(2), help="Weight to move in the direction of the global best")
+    group.add_argument("--randomize_order", action="store_true", default=True, help="Randomize order of the particle updates")
+
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+
+    Shape = get_shape(args.shape)
+    Optimizer = get_optimizer(args)
+    loglevel = logging.DEBUG if args.verbose else logging.INFO
+    runner = ImageApproximator(args.image_name, Shape, args.num_shapes, Optimizer, loglevel=loglevel)
+    runner.run(args.num_steps, args.time_limit, args.output, args.log_interval)
 
 if __name__ == '__main__':
     main()
