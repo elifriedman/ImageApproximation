@@ -7,25 +7,28 @@ from collections import namedtuple
 logger = logging.getLogger("optimizer")
 Param = namedtuple('Param', ['value', 'vector',])
 
-def normalize(param):
-#    return param % 1.
-    return np.maximum(0., np.minimum(1., param))
-
 
 class Optimizer(object):
-    def __init__(self, evaluate, initial_param_gen):
+    def __init__(self, evaluate, initial_param_gen, circular_normalizer=False, **kwargs):
         self.evaluate = evaluate
         self.param_gen = initial_param_gen
         initial_param = initial_param_gen()
         self.initial_param = Param(self.evaluate(initial_param), initial_param)
         self.D = len(self.initial_param.vector)
         self.iteration = -1
+        self.circular_normalizer = circular_normalizer
 
     def init(self):
         pass
 
     def iterate(self):
         self.iteration += 1
+
+    def normalize(self, param):
+        if self.circular_normalizer:
+            return param % 1.
+        else:
+            return np.maximum(-0.1, np.minimum(1.1, param))
 
 
 class ParticleSwarm(Optimizer):
@@ -49,7 +52,7 @@ class ParticleSwarm(Optimizer):
         randomize_order : bool
             Whether to randomize order in which particles are updated
         """
-        super().__init__(evaluate, initial_param_gen)
+        super().__init__(evaluate, initial_param_gen, **kwargs)
         self.number_particles = number_particles
         self.particles = []
         self.w_omega = w_omega
@@ -135,7 +138,7 @@ class SimulatedAnnealing(Optimizer):
         num_axes_to_update : int
             The number of axes of the current point that should be annealed per iteration
         """
-        super().__init__(evaluate, initial_param_gen)
+        super().__init__(evaluate, initial_param_gen, **kwargs)
         self.temp = temp_schedule if temp_schedule else lambda t: w_gamma / np.log(t + 2)
         self.prob = accept_probability if accept_probability else self._prob
         self.num_axes = num_axes_to_update
@@ -159,7 +162,7 @@ class SimulatedAnnealing(Optimizer):
         candidate = self.current.vector.copy()
         candidate[idxs] = self.current.vector[idxs] + np.random.rand(len(idxs))
 
-        candidate = normalize(candidate)
+        candidate = self.normalize(candidate)
         candidate = Param(self.evaluate(candidate), candidate)
 
         if candidate.value < self.best.value:
@@ -195,7 +198,7 @@ class SimplexOptimizer(Optimizer):
         random_init : boolean
             whether to initialize the simplex to include orthogonal points (False) or random points (True)
         """
-        super().__init__(evaluate, initial_param_gen)
+        super().__init__(evaluate, initial_param_gen, **kwargs)
         self.simplex = []
         self.w_reflect = w_reflect
         self.w_expand = w_expand
@@ -208,9 +211,9 @@ class SimplexOptimizer(Optimizer):
         vec[0] = .5
         simplex = [self.initial_param.vector]
         if not self.random_init:
-            simplex.extend([normalize(np.roll(vec, i) + simplex[0]) for i in range(self.D)])  # create simplex
+            simplex.extend([self.normalize(np.roll(vec, i) + simplex[0]) for i in range(self.D)])  # create simplex
         else:
-            simplex.extend([normalize(np.random.uniform(size=self.D) + simplex[0]) for i in range(self.D)])  # create simplex
+            simplex.extend([self.normalize(np.random.uniform(size=self.D) + simplex[0]) for i in range(self.D)])  # create simplex
         self.simplex = [Param(self.evaluate(param), param) for param in simplex]
         self.simplex.sort(key=lambda x: x.value)
 
@@ -224,12 +227,12 @@ class SimplexOptimizer(Optimizer):
         centroid = np.mean([elem.vector for elem in self.simplex[:-1]], axis=0)
 
         # reflect in the direction opposite the worst performer
-        candidate = normalize(centroid + self.w_reflect*(centroid - largest.vector))
+        candidate = self.normalize(centroid + self.w_reflect*(centroid - largest.vector))
         candidate = Param(self.evaluate(candidate), candidate)
 
         if candidate.value < smallest.value:
             # that direction was a success, let's try to improve further by expanding
-            newcandidate = normalize(centroid + self.w_expand*(candidate.vector - centroid))
+            newcandidate = self.normalize(centroid + self.w_expand*(candidate.vector - centroid))
             newcandidate = Param(self.evaluate(newcandidate), newcandidate)
             if newcandidate.value < candidate.value:
                 logger.debug("operation: expand %.3f" % newcandidate.value)
@@ -247,12 +250,12 @@ class SimplexOptimizer(Optimizer):
         if secondlargest.value <= candidate.value < largest.value:
             # that direction wasn't a complete failure, let's try something more conservative
             op = "operation: outer contract %.3f" % candidate.value
-            newcandidate = normalize(centroid + self.w_contract*(candidate.vector - centroid))
+            newcandidate = self.normalize(centroid + self.w_contract*(candidate.vector - centroid))
             newcandidate = Param(self.evaluate(newcandidate), newcandidate)
         
         if largest.value <= candidate.value:
             op = "operation: inner contract %.3f" % candidate.value
-            newcandidate = normalize(centroid + self.w_contract*(largest.vector - centroid))
+            newcandidate = self.normalize(centroid + self.w_contract*(largest.vector - centroid))
             newcandidate = Param(self.evaluate(newcandidate), newcandidate)
 
         if newcandidate.value < largest.value:
@@ -266,9 +269,9 @@ class SimplexOptimizer(Optimizer):
         logger.debug("operation: shrink all")
 #        idxs = np.random.choice(np.arange(self.D), 40, replace=False)
 #        for idx in idxs:
-#            newval = normalize(smallest.vector + self.w_shrink*(self.simplex[idx].vector - smallest.vector))
+#            newval = self.normalize(smallest.vector + self.w_shrink*(self.simplex[idx].vector - smallest.vector))
 #            self.simplex[idx] = Param(self.evaluate(newval), newval)
-        newsimplex = [normalize(smallest.vector + self.w_shrink*(param.vector - smallest.vector)) for param in self.simplex]
+        newsimplex = [self.normalize(smallest.vector + self.w_shrink*(param.vector - smallest.vector)) for param in self.simplex]
         self.simplex = [Param(self.evaluate(param), param) for param in newsimplex]
         self.simplex.sort(key=lambda x: x.value)
         return self.simplex[0]

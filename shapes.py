@@ -18,8 +18,8 @@ class Shape(object):
         alpha : float
             opacity of the shape. Clipped to be in range [0, 1]
         """
-        self.x = max(0., min(1., pos[0]))
-        self.y = max(0., min(1., pos[1]))
+        self.x = max(-0.7, min(1.3, pos[0]))
+        self.y = max(-0.7, min(1.3, pos[1]))
         self.color = np.maximum(0., np.minimum(1., color))
         self.alpha = max(0., min(1., alpha))
         self._params = [*pos, *color, alpha]

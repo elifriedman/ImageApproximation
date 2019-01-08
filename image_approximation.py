@@ -62,7 +62,7 @@ class ImageApproximator(object):
             return value, img
         return value
 
-    def run(self, num_steps=None, time_limit=None, output_file="output.png", log_interval=1000):
+    def run(self, num_steps=None, time_limit=None, output_file="output.png", log_interval=100):
         num_steps = 1000000000 if num_steps is None else num_steps 
         time_limit = 3600*24 if time_limit is None else time_limit
 
@@ -121,6 +121,7 @@ def parse_args():
                                      choices=["simplex",
                                               "annealing",
                                               "pso"])
+    parser.add_argument("--circular_normalizer", action="store_true", help="If true, the normalizer will convert 1.1 to 0.1 and -0.1 to 0.9")
 
     group = parser.add_argument_group("simplex", "Nelson-Mead Simplex Algorithm")
     group.add_argument("--random_init", action="store_true", default=False,
@@ -131,7 +132,7 @@ def parse_args():
     group.add_argument("--w_shrink", type=float, default=.5, help="weight for shrinking")
 
     group = parser.add_argument_group("annealing", "Simulated Annealing")
-    group.add_argument("--w_gamma", type=float, default=.1, help="initial multiplier for temperature")
+    group.add_argument("--w_gamma", type=float, default=1., help="initial multiplier for temperature")
     group.add_argument("--num_axes", type=int, default=1, help="The number of axes of the current point that should be updated per iteration")
 
     group = parser.add_argument_group("pso", "Particle Swarm Optimization")
