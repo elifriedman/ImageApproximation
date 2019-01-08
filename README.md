@@ -5,7 +5,7 @@ Implementation of some optimization algorithms to approximate an image using sim
 ![System Diagram](https://raw.githubusercontent.com/elifriedman/ImageApproximation/master/imgs/sysdiagram.png)
 
 The [Shape](https://github.com/elifriedman/ImageApproximation/blob/master/shapes.py#L6) class is the base class for creating a new shape that can be used. It is responsible for the parameters of a given shape, and contains the interface for drawing shapes to a PIL image.
-The [Optimizer](https://github.com/elifriedman/ImageApproximation/blob/master/optimizers.py#L15) class is the interface for the optimizers. Its subclasses implement the iterate method, which is used to run one iteration of the optimizations.
+The [Optimizer](https://github.com/elifriedman/ImageApproximation/blob/master/optimizers.py#L11) class is the interface for the optimizers. Its subclasses implement the iterate method, which is used to run one iteration of the optimizations.
 
 # Optimization Algorithms
 ## Nelder Mead Simplex Algorithm
