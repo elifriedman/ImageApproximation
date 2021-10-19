@@ -1,6 +1,5 @@
-import time
-import signal
-import logging
+import gym, gym.spaces as spaces
+from gym.utils import seeding
 import numpy as np
 import argparse
 from PIL import Image
@@ -26,12 +25,7 @@ class ImageApproximator(object):
         self.target = np.asarray(Image.open(image_name))
         self.num_shapes = num_shapes
         self.shape_type = shape
-        self.params = [self.gen_random_vec() for _ in range(num_shapes)]
-        optimizers = []
-        for i in range(num_shapes):
-            optimizer = optimizer_type(i, self.evaluate, self.gen_random_vec)
-            optimizers.append(optimizer)
-        self.optimizers = optimizers
+        self.optimizer = optimizer_type(self.evaluate, self.gen_random_vec)
         self.config_logging(loglevel)
 
     def config_logging(self, loglevel):
@@ -44,7 +38,11 @@ class ImageApproximator(object):
         logging.getLogger("optimizer").addHandler(handler)
 
     def gen_random_vec(self):
-        return np.asarray(self.shape_type.random_params())
+        params = []
+        for i in range(self.num_shapes):
+            params.append(self.shape_type.random_params())
+        param_vec = self.params2vec(params)
+        return param_vec
 
     def vec2params(self, param_vec):
         return np.reshape(param_vec, (self.num_shapes, -1))
@@ -52,11 +50,10 @@ class ImageApproximator(object):
     def params2vec(self, params):
         return np.concatenate(params)
 
-    def evaluate(self, params, optim_name=None, return_img=False):
-        if optim_name is not None:
-            self.params[optim_name] = params
+    def evaluate(self, param_vec, return_img=False):
+        params = self.vec2params(param_vec)
         img = Image.new('RGB', (self.target.shape[1], self.target.shape[0]))
-        for param in self.params:
+        for param in params:
             shape = self.shape_type.init_from_params(param)
             shape.draw(img)
         value = np.mean(np.abs(np.asarray(img) - self.target))
@@ -82,17 +79,16 @@ class ImageApproximator(object):
             if self.stop:
                 break
 
-            optim_name = np.random.randint(len(self.optimizers))
-            value, paramvec = self.optimizers[optim_name].iterate()
+            value, paramvec = self.optimizer.iterate()
             if value < best:
                 best = value
-                value, img = self.evaluate(paramvec, optim_name, return_img=True)
+                value, img = self.evaluate(paramvec, return_img=True)
                 img.save(output_file)
             if i % log_interval == 0:
                 now = time.time() - start
                 self.logger.info("%d: time=%.3f, score=%.3f, best=%.3f", i, now, value, best)
 
-        return self.evaluate(paramvec, None, return_img=True)
+        return self.evaluate(paramvec, return_img=True)
 
 
 def get_optimizer(args):
@@ -102,7 +98,7 @@ def get_optimizer(args):
         opt = SimulatedAnnealing
     if args.optimizer == "pso":
         opt = ParticleSwarm
-    return lambda name, evl, gen: opt(name, evl, gen, **args.__dict__)
+    return lambda evl, gen: opt(evl, gen, **args.__dict__)
 
 
 def parse_args():
@@ -158,3 +154,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
